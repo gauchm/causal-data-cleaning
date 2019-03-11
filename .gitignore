@@ -3,3 +3,5 @@
 xray/
 data/
 mldcpy/
+*.png
+*.pdf
