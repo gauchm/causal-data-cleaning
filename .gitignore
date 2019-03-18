@@ -3,3 +3,6 @@
 xray/
 data/
 mldcpy/
+*.png
+*.pdf
+*.tks
