@@ -22,13 +22,17 @@ def propensity_score(data, TREATMENT, TREATMENT_COL, treatment_subdimensions, OU
                          pd.DataFrame(encoder.transform(data[CAT_COVARIATES]))], axis=1)\
                 .drop([TREATMENT, TREATMENT_COL, OUTCOME] + treatment_subdimensions + additional_excludes, axis=1)
 
-    m = LogisticRegression()
-    m.fit(train_X, data[TREATMENT])
+    data['scores'] = 0.0
+    for i in range(n_models):
+        print('Training model {}/{}'.format(i+1, n_models))
+        m = LogisticRegression(solver='liblinear')
+        m.fit(train_X, data[TREATMENT])
 
-    prediction = m.predict(train_X)
-    print('Train Accuracy: ', metrics.accuracy_score(data[TREATMENT], prediction))
-
-    data['scores'] = m.predict_proba(train_X)[:,0]
+        prediction = m.predict(train_X)    
+        data['scores'] += m.predict_proba(train_X)[:,1]
+        
+    data['scores'] = data['scores'] / n_models
+    print('Train Accuracy: ', metrics.accuracy_score(data[TREATMENT], data['scores'] > 0.5))
     return data
 
 
