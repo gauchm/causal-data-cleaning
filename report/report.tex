@@ -7,6 +7,7 @@
 \acmMonth{04}
 
 %\citestyle{acmauthoryear}
+\usepackage{tikz}
 
 \begin{document}
 
@@ -67,18 +68,40 @@ Finally, we investigate how these causal analysis tools can be employed to analy
 \section{Background}
 
 \subsection{Observational Studies}
+An observational study is an experimental setting in which researchers try to infer the effect of a \textit{treatment} on a specific \textit{outcome}.
+In contrast to a randomized study, the independent variables are not under the researchers' control---they can only observe, not assign treatment.
+This has a serious impact on how the collected data need to be interpreted. 
+To account for possible bias in the treatment assignment, one needs to compare the outcome for similar treated and untreated individuals.
+Additionally, one needs to control for \textit{confounding} variables that affect both the treatment assignment and the outcome.\\
 
-\textit{Average treatment effect}:
+Ideally, we would compare \textit{counterfactuals}: If we knew each individual's outcome under treatment \textit{and} non-treatment, holding all independent variables constant, we could easily calculate the treatment effect as the average difference in actual and counterfactual outcome.
+In practice however, we do not know the counterfactual outcome, as we can only observe one treatment decision per individual.
+Hence, causal analysis techniques for observational studies try to find and compare similar individuals among the treated and untreated populations and compare those.
+One common approach for such comparisons is \textit{propensity score stratification}. Here, we train a simple machine learning model to predict each individual's \textit{propensity score}---its likelihood to be treated---given the independent variables.
+The idea is that individuals with similar scores but different treatment are good candidates to be compared. 
+Therefore, we partition the population into groups with similar propensity scores and calculate the treatment effect within each stratum as in \autoref{eq:ate}.
 \begin{equation}
-ATE = \sum_{i=1}^{k}{\frac{1}{N_i}(\overline{O}_{i, T = 1} - \overline{O}_{i, T = 0})}
+\label{eq:ate}
+\begin{aligned}
+\text{ATE} &= \mathbb{E}(O_{i1} | T=1) - \mathbb{E}(O_{i0} | T=0)\\
+ &= \sum_{i=1}^{k}{\frac{1}{N_i}(\overline{O}_{i, T = 1} - \overline{O}_{i, T = 0})}
+\end{aligned}
 \end{equation}
-where $\overline{O}_{i, T = y}$ is the average outcome in stratum $i$ where treatment $T = y$, and $N_i$ is the size of stratum $i$.\\
+Here, $O_{ij}$ is the outcome for an individual $i$ under treatment $T=j$, and $\overline{O}_{i, T = j}$ is the average outcome in stratum $i$ where treatment $T = j$, and $N_i$ is the size of stratum $i$.\\
 
-\textit{Average treatment effect on the treated}:
+Sometimes, we are not actually interested in the treatment effect among the whole population, but rather in the counterfactual outcome for the treated subpopulation. That is, we try to answer the question "How did the treatment affect the treated individuals?" In this case, we calculate the \textit{average treatment effect on the treated} as in \autoref{eq:att}.
 \begin{equation}
-ATT = \sum_{i=1}^{k}{\frac{1}{N_{i, T = 1}}(\overline{O}_{i,T = 1} - \overline{O}_{i,T = 0})}
+\label{eq:att}
+\begin{aligned}
+\text{ATT} &= \mathbb{E}(O_{i1} | T=1) - \mathbb{E}(O_{i0} | T=1)\\
+ &= \sum_{i=1}^{k}{\frac{1}{N_{i, T = 1}}(\overline{O}_{i,T = 1} - \overline{O}_{i,T = 0})}
+\end{aligned}
 \end{equation}
-where $N_{i, T = 1}$ is the amount of treated individuals in stratum $i$.
+Here, $O_{i0}$ is the unobserved outcome for an individual $i$ had it not been treated, and $N_{i, T = 1}$ is the amount of treated individuals in stratum $i$.\\
+
+While propensity score stratification is a powerful tool, there remain limitations to the analysis of observational study data. 
+If the covariate distributions in a stratum's treated and untreated subpopulation are significantly different, we cannot draw any causal conclusions as we cannot be sure if we are missing confounding effects of this covariate.
+We can test the distributions for similarity using $\chi^2$-hypothesis tests for categorical and Kolmogorov-Smirnov tests for continuous independent variables \cite{Sekhon08}.
 
 \subsection{Causal Inference}
 
@@ -101,9 +124,32 @@ While clearly not every trial can be emulated through data analysis, they find t
 
 
 \section{Experiments}
-...
-There remain inherent limitations to the interpretability of observational studies. We assume ignorability, i.e. there are no unmeasured confounders. 
+We conduct experiments on both synthetic and real-world data sets, where we analyze the causal effect of an assumed error explanation.
+We view the data sets as outcomes of an observational study, where the assumed cause is the treatment and a tuple's correctness is the outcome.
+All further data set attributes are treated as covariates that might induce bias on the treatment assignment.
+Consequently, we apply propensity score stratification to control for this bias.\\
+
+In summary, each analysis consists of the following steps:
+\begin{enumerate}
+\item For a given data set with attributes $X = \{X_1, \dots, X_k\}$ and known erroneous tuples $t \in E$, find attribute-value combinations $X_i = x_i, \quad (i \in I)$ that are assumed to explain the errors.
+\item Introduce a new binary treatment attribute $T$ where $t[T] = 1 \Leftrightarrow \forall i \in I: t[X_i] = x_i$.
+\item Introduce a new binary outcome attribute $O$ where $t[O] = 1 \Leftrightarrow t \in E$.
+\item Train a random forest classifier to predict $T$ given the independent variables $X \setminus \{X_i | i \in I\}$ and apply it to all tuples to obtain a propensity score for each individual.
+\item Partition the data set into groups of similar propensity score.
+\item In each partition, compare the covariate distributions of the treated with the untreated using $\chi^2$- or Kolmogorov-Smirnov tests of independence. If the independence tests cannot reject the hypothesis of identical distributions, we can continue.
+\item\label{exp:ate} Calculate the average treatment effect:
+\[
+\text{ATE} = \sum_{i=1}^{k}{\frac{1}{N_i}(\overline{O}_{i, T = 1} - \overline{O}_{i, T = 0})}
+\]
+\item To provide a measure of significance, we compare the effect to a simulated placebo treatment. We assign $t[T]$ uniformly at random to $0$ or $1$ for all tuples and calculate the new treatment effect.
+By repeating this process $m$ times, we obtain a sample $p = (p_1, \dots, p_m)$ of the placebo effect distribution.
+\item If the observed treatment effect from step \ref{exp:ate} is outside the $95\%$-bounds of $p$, we can be reasonably certain that the observed effect is no coincidence.
+\end{enumerate}
+
+Note that there remain inherent limitations to the interpretability of observational studies. We have to assume \textit{ignorability}, i.e. that the data set's attributes $X$ include all confounding variables which might affect the outcome.
 Unlike planned experimental studies, we cannot guarantee truly random treatment assignment. Nevertheless, a careful analysis of available data constitutes a step towards a more justifiable notion of error causality.\\
+
+In the following sections, we describe the results of our experiments on synthetic and real-world data as well as the application of the observational study framework to estimate machine learning model bias.\\
 
 \subsection{Synthetic Data Set}
 We generate a data set in which we know the actual cause of errors. Modeling personal data records, it contains $10,000$ records with the columns shown in \autoref{tab:synth}. 
@@ -129,15 +175,19 @@ Marital status & $4$ \\
 \label{tab:synth}
 \end{center}
 \end{table}
-
-We apply Data X-Ray as an existing error explanation, which returns \textit{birth continent} and \textit{citizenship continent} as possible causes. Hence, we analyze both hypotheses in the observational study setting.\\
+We apply Data X-Ray as an existing error explanation, which returns \{\textit{birth continent} = Asia\} and \{\textit{citizenship continent} = Asia\} as possible causes. Hence, we analyze both hypotheses in the observational study setting. \autoref{fig:causalGraph} shows the causal graph for the assumed cause \{\textit{birth continent} = Asia\}.\\
+\begin{figure}[htbp]
+\input{figures/causalGraph.tikz}
+\caption{Assumed causal graph for the error explanation \{\textit{birth continent} = Asia\}.}
+\label{fig:causalGraph}
+\end{figure}
 
 By analyzing causality in a statistical way, we can correctly distinguish actual cause and correlated covariate. The average treatment effect among the treated for \textit{birth continent} is $-0.14$, while the treatment effect for \textit{citizenship continent} of $-0.01$ is within the $95\%$-bounds of placebo treatment effect.
 Consequently, we can reject \textit{citizenship continent} and approve \textit{birth continent} as a cause for the errors in the data set.
 In the empirical quantile-quantile plot in \autoref{fig:qqBirth} we repeatedly analyze subsamples of the data set to obtain a distribution of treatment effects that we compare against placebo effect.
 The plot clearly shows the difference between the two distributions, which further emphasizes the causal relationship.
 \begin{figure}[htbp]
-%\includegraphics[width=\linewidth]{figures/qqBirth.pdf}
+\includegraphics[width=0.6\linewidth]{figures/qqBirth.pdf}
 \caption{Empirical quantile-quantile plot showing the difference between placebo and actual treatment (\textit{birth continent} = Asia) effect on erroneous outcomes.}
 \label{fig:qqBirth}
 \end{figure}
@@ -168,9 +218,10 @@ Hence, we can generate random tuples with \textit{gender} taking values male and
 Now we consider the value of \textit{gender} as the treatment, and the income classification as the outcome, which enables us to estimate the treatment effect.
 With the given random forest classifier that achieves a classification accuracy of $0.86$, we find an average treatment effect of $-0.05$, which is well outside the $95\%$-bounds of placebo treatment.
 The empirical quantile-quantile plot reflects this and shows the actual treatment to differ significantly from placebo treatment, as \autoref{fig:qqML} shows.
-This result suggests that the classifier is in fact biased towards lower incomes for female individuals.
+This result suggests that the classifier is in fact biased towards lower incomes for female individuals.\\
+
 \begin{figure}[htbp]
-%\includegraphics[width=\linewidth]{figures/qqML.pdf}
+\includegraphics[width=0.6\linewidth]{figures/qqML.pdf}
 \caption{Empirical quantile-quantile plot showing the difference between placebo and actual treatment (\textit{gender} = female) effect on income prediction.}
 \label{fig:qqML}
 \end{figure}
