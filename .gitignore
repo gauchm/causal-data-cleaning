@@ -1,6 +1,7 @@
 .ipynb_checkpoints/
 .idea/
 __pycache__/
+report/
 xray/
 data/
 mldcpy/
